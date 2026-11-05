@@ -1,0 +1,14 @@
+node_modules/**
+engine/**
+src/**
+webview/**
+scripts/**
+test/**
+tsconfig.json
+package-lock.json
+release/**
+docs/**
+
+.playwright-cli/**
+output/**
+.gitignore

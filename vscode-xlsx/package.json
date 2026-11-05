@@ -1,0 +1,47 @@
+{
+  "name": "canvas-xlsx-editor",
+  "displayName": "Canvas XLSX Editor",
+  "description": "CanvasでXLSXを編集。Powered by ibisOffice.",
+  "version": "0.1.0",
+  "publisher": "shoma-max",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Custom Editors"
+  ],
+  "main": "./dist/extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shoma-MAX/canvas-xlsx-editor"
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "canvasXlsx.editor",
+        "displayName": "Canvas XLSX Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.xlsx"
+          }
+        ],
+        "priority": "default"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "package": "npm run build && vsce package --no-dependencies --out release/",
+    "build:wasm": "bash scripts/build-wasm.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.7.0",
+    "esbuild": "^0.25.0",
+    "@vscode/vsce": "^3.0.0"
+  }
+}

@@ -1,0 +1,38 @@
+name: Canvas XLSX Extension
+on:
+  push:
+    paths: ['vscode-xlsx/**', 'crates/ibis-calc/**', 'crates/ibis-doc-model/**', 'crates/ibis-ooxml/**', 'crates/ibis-pptx/**', '.github/workflows/canvas-xlsx.yml']
+  pull_request:
+    paths: ['vscode-xlsx/**', 'crates/ibis-calc/**', 'crates/ibis-doc-model/**', 'crates/ibis-ooxml/**', 'crates/ibis-pptx/**', '.github/workflows/canvas-xlsx.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode-xlsx
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: vscode-xlsx/package-lock.json
+      - name: Prepare Rust WASM tools
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+          cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - run: npm ci --ignore-scripts
+      - run: npm run build:wasm
+      - run: npm run check
+      - run: npm run build
+      - run: python3 test/fixture.py
+      - run: npm test
+      - run: mkdir -p release && npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: canvas-xlsx-editor-vsix
+          path: vscode-xlsx/release/*.vsix

@@ -1,0 +1,16 @@
+[package]
+name = "canvas-xlsx-engine"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+[workspace]
+[lib]
+crate-type = ["cdylib", "rlib"]
+[dependencies]
+ibis-calc = { path = "../../crates/ibis-calc" }
+ibis-doc-model = { path = "../../crates/ibis-doc-model" }
+ibis-pptx = { path = "../../crates/ibis-pptx" }
+ibis-ooxml = { path = "../../crates/ibis-ooxml" }
+serde_json = "1"
+wasm-bindgen = "0.2"
+roxmltree = "0.21"

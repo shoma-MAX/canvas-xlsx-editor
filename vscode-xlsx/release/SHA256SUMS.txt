@@ -1,0 +1,1 @@
+3b4c73787a3dab3412442891b20a21199aa94e84023fa00c9bf32ea0a13e17c9  release/canvas-xlsx-editor-0.1.0.vsix
