@@ -1,1 +1,2 @@
-3b4c73787a3dab3412442891b20a21199aa94e84023fa00c9bf32ea0a13e17c9  release/canvas-xlsx-editor-0.1.0.vsix
+3b4c73787a3dab3412442891b20a21199aa94e84023fa00c9bf32ea0a13e17c9  canvas-xlsx-editor-0.1.0.vsix
+d8060f71bb9b25666a68fd323d2f7ae41ff8e45257999b32ce88adab75e2220c  canvas-xlsx-editor-0.1.1.vsix

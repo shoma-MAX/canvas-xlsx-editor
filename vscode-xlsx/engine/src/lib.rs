@@ -572,7 +572,20 @@ impl Engine {
         // Every untouched package part must survive byte-for-byte when decompressed.
         let before = Package::open(self.original.clone()).map_err(err)?;
         let after = Package::open(bytes.clone()).map_err(err)?;
+        // Text edits legitimately append to the shared-string table and update its
+        // counts. Resolve the actual part through workbook relationships, since
+        // OOXML does not require the conventional sharedStrings.xml filename.
+        let string_parts: Vec<_> = before.relationships("xl/workbook.xml").map_err(err)?
+            .iter().filter(|r| r.kind == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings")
+            .filter_map(|r| r.target_part("xl/workbook.xml")).collect();
         for name in before.names() {
+            if string_parts.iter().any(|part| part == name) {
+                let original = before.read(name).map_err(err)?;
+                let saved = after.read(name).map_err(err)?;
+                preserve_shared_strings(&original, &saved)
+                    .map_err(|e| format!("共有文字列の保持検証に失敗: {name}: {e}"))?;
+                continue;
+            }
             let mutable = name.starts_with("xl/worksheets/") && name.ends_with(".xml")
                 || matches!(
                     name,
@@ -680,4 +693,33 @@ fn coordinate(v: &Value, k: &str, max: u32) -> Result<u32, String> {
         return Err("Excelの最大行列を超えています".into());
     }
     Ok(n)
+}
+
+// The upstream writer appends strings; existing indices and rich/phonetic runs
+// must stay intact, including strings that no cell currently references.
+fn preserve_shared_strings(original: &[u8], saved: &[u8]) -> Result<(), String> {
+    let original = std::str::from_utf8(original).map_err(err)?;
+    let saved = std::str::from_utf8(saved).map_err(err)?;
+    let before = roxmltree::Document::parse(original).map_err(err)?;
+    let after = roxmltree::Document::parse(saved).map_err(err)?;
+    let ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    let old: Vec<_> = before
+        .root_element()
+        .children()
+        .filter(|n| n.has_tag_name((ns, "si")))
+        .collect();
+    let new: Vec<_> = after
+        .root_element()
+        .children()
+        .filter(|n| n.has_tag_name((ns, "si")))
+        .collect();
+    if new.len() < old.len()
+        || old
+            .iter()
+            .zip(&new)
+            .any(|(a, b)| original[a.range()] != saved[b.range()])
+    {
+        return Err("既存の共有文字列が削除または変更されています".into());
+    }
+    Ok(())
 }

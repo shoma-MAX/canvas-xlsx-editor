@@ -270,3 +270,26 @@ test("declared ZIP expansion is rejected before decompression", () => {
   bytes.writeUInt32LE(300 * 1024 * 1024, central + 24);
   assert.throws(() => new Engine(bytes), /256MiB/);
 });
+
+for (const name of ["shared-strings.xlsx", "shared-strings-custom.xlsx"]) test(`existing shared strings support Japanese text edits, repeat saves and undo: ${name}`, async () => {
+  const e = new Engine(await readFile(`test/${name}`));
+  assert.equal(get(e).find(c => c.row === 1 && c.column === 0).text, "りんご");
+  req(e, {op:"set", cells:[{row:1,column:0,input:"新しいプロット：主人公の決断"}]});
+  let saved = e.save();
+  let reopened = new Engine(saved);
+  assert.equal(get(reopened).find(c => c.row === 1 && c.column === 0).text, "新しいプロット：主人公の決断");
+  assert.equal(get(reopened).find(c => c.row === 2 && c.column === 0).text, "みかん");
+  reopened.free();
+  req(e, {op:"set", cells:[{row:2,column:0,input:"次の場面"}]});
+  saved = e.save();
+  reopened = new Engine(saved);
+  assert.equal(get(reopened).find(c => c.row === 2 && c.column === 0).text, "次の場面");
+  req(reopened, {op:"set", cells:[{row:0,column:0,input:"再開後の編集"}]});
+  const again = new Engine(reopened.save());
+  assert.equal(get(again).find(c => c.row === 0 && c.column === 0).text, "再開後の編集");
+  again.free(); reopened.free();
+  req(e, {op:"undo"});
+  reopened = new Engine(e.save());
+  assert.equal(get(reopened).find(c => c.row === 2 && c.column === 0).text, "みかん");
+  reopened.free(); e.free();
+});

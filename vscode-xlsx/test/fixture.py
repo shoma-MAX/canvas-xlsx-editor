@@ -14,3 +14,18 @@ parts['xl/_rels/workbook.xml.rels']=parts['xl/_rels/workbook.xml.rels'].replace(
 for name,extra in [('basic.xlsx',{}),('advanced.xlsx',{'xl/drawings/drawing1.xml':'<drawing />'})]:
  with zipfile.ZipFile(root/name,'w',zipfile.ZIP_DEFLATED) as z:
   for path,data in (parts|extra).items():z.writestr(path,data)
+
+# Excel normally stores text via the shared-string table, rather than inlineStr.
+shared = dict(parts)
+for index, text in enumerate(['品目', '売上', 'りんご', 'みかん']):
+ shared['xl/worksheets/sheet1.xml'] = shared['xl/worksheets/sheet1.xml'].replace(f't="inlineStr"><is><t>{text}</t></is>', f't="s"><v>{index}</v>')
+shared['xl/sharedStrings.xml'] = f'''<sst xmlns="{ns}" count="4" uniqueCount="5"><si><t>品目</t></si><si><t>売上</t></si><si><t>りんご</t></si><si><t>みかん</t></si><si><r><rPr><b/></rPr><t xml:space="preserve"> 未使用の共有文字列 </t></r></si></sst>'''
+shared['[Content_Types].xml'] = shared['[Content_Types].xml'].replace('</Types>', '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>')
+shared['xl/_rels/workbook.xml.rels'] = shared['xl/_rels/workbook.xml.rels'].replace('</Relationships>', '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>')
+with zipfile.ZipFile(root/'shared-strings.xlsx', 'w', zipfile.ZIP_DEFLATED) as z:
+ for path, data in shared.items(): z.writestr(path, data)
+
+# Shared-string parts may use a nonstandard filename.
+custom = {path.replace('xl/sharedStrings.xml', 'xl/strings/custom.xml'): data.replace('/xl/sharedStrings.xml', '/xl/strings/custom.xml').replace('Target="sharedStrings.xml"', 'Target="strings/custom.xml"') for path, data in shared.items()}
+with zipfile.ZipFile(root/'shared-strings-custom.xlsx', 'w', zipfile.ZIP_DEFLATED) as z:
+ for path, data in custom.items(): z.writestr(path, data)
