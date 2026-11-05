@@ -225,7 +225,7 @@ impl Engine {
                     .get(cell.style as usize)
                     .cloned()
                     .unwrap_or_default();
-                cells.push(json!({"row":cell.row,"column":cell.column,"text":cell.text,"input":cell.formula.as_ref().map(|f|format!("={f}")).unwrap_or_else(||value_input(&cell.value)),"bold":style.bold,"color":format!("#{:06x}",style.color.0),"fill":style.fill.map(|c|format!("#{:06x}",c.0)),"align":format!("{:?}",style.align),"format":style.number_format,"error":matches!(cell.value,CellValue::Error(_))}));
+                cells.push(json!({"row":cell.row,"column":cell.column,"text":cell.text,"input":cell.formula.as_ref().map(|f|format!("={f}")).unwrap_or_else(||value_input(&cell.value)),"bold":style.bold,"color":format!("#{:06x}",style.color.0),"fill":style.fill.map(|c|format!("#{:06x}",c.0)),"align":format!("{:?}",style.align),"format":style.number_format,"wrap":style.wrap,"fontSize":(style.font_size as f64/100.0*96.0/72.0).max(1.0),"vertical":format!("{:?}",style.vertical),"error":matches!(cell.value,CellValue::Error(_))}));
             }
             return Ok(json!({"cells":cells}));
         }
@@ -470,7 +470,61 @@ impl Engine {
                         })
                     })
                     .collect::<Result<Vec<_>, String>>()?;
-                SheetCommand::SetCells { slide, edits }
+                // Keep multiline text, wrapping and the required row height in
+                // one undo step. Never shrink an explicitly enlarged row.
+                let sh = self.sheet(index)?;
+                let mut heights = std::collections::BTreeMap::<u32, i64>::new();
+                let mut wraps = Vec::new();
+                for edit in &edits {
+                    if let CellInput::Value(CellValue::Text(text)) = &edit.input {
+                        if text.contains('\n') {
+                            let style = sh
+                                .cell(edit.row, edit.column)
+                                .and_then(|c| sh.styles.get(c.style as usize))
+                                .cloned()
+                                .unwrap_or_default();
+                            let font_px = (style.font_size as f64 / 100.0 * 96.0 / 72.0).max(13.0);
+                            let height = ((text.split('\n').count() as f64 * font_px * 1.25 + 8.0)
+                                .min(4096.0)
+                                * 9525.0)
+                                .ceil() as i64;
+                            let entry = heights.entry(edit.row).or_insert(
+                                sh.rows
+                                    .get(edit.row as usize)
+                                    .copied()
+                                    .unwrap_or(sh.default_row),
+                            );
+                            *entry = (*entry).max(height);
+                            if !style.wrap {
+                                wraps.push(CellRange {
+                                    first_row: edit.row,
+                                    last_row: edit.row,
+                                    first_column: edit.column,
+                                    last_column: edit.column,
+                                });
+                            }
+                        }
+                    }
+                }
+                let mut commands = vec![Command::Sheet(SheetCommand::SetCells { slide, edits })];
+                if !wraps.is_empty() {
+                    commands.push(Command::Sheet(SheetCommand::SetFormat {
+                        slide,
+                        ranges: wraps,
+                        change: StyleChange::Wrap(true),
+                    }));
+                }
+                for (row, size) in heights {
+                    commands.push(Command::Sheet(SheetCommand::SetSize {
+                        slide,
+                        axis: Axis::Rows,
+                        first: row,
+                        last: row,
+                        size,
+                    }));
+                }
+                self.apply(commands)?;
+                return Ok(self.metadata());
             }
             "format" => {
                 let range = range(&v)?;

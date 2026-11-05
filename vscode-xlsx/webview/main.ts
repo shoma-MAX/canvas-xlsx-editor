@@ -1,4 +1,4 @@
-import { Axis, parseTsv } from "./geometry";
+import { Axis, parseTsv, cellLines, resizeBoundary } from "./geometry";
 declare function acquireVsCodeApi(): { postMessage: (v: unknown) => void };
 declare global {
   interface Window {
@@ -18,12 +18,12 @@ app.innerHTML = `<style>
 <button id="bold" data-edit title="太字"><b>B</b></button><label title="文字色">A <input id="color" data-edit type="color" value="#222222" aria-label="文字色" style="width:30px"></label><label title="背景色">塗 <input id="fill" data-edit type="color" value="#fff2cc" aria-label="背景色" style="width:30px"></label>
 <select id="align" data-edit aria-label="文字揃え"><option value="left">左揃え</option><option value="center">中央揃え</option><option value="right">右揃え</option></select>
 <select id="number" data-edit aria-label="数値形式"><option value="General">標準</option><option value="0">整数</option><option value="0.00">小数点2桁</option><option value="#,##0">桁区切り</option><option value="0%">パーセント</option><option value="yyyy/mm/dd">日付</option><option value="@">文字列</option></select><span class="separator"></span>
-<button id="find">検索・置換</button><span class="hint">ダブルクリック / F2 で編集</span>
+<button id="find">検索・置換</button><button id="rowHeight" data-edit>行の高さ…</button><button id="columnWidth" data-edit>列の幅…</button><span class="hint">F2で編集 / Alt+Enterで改行</span>
 </div>
 <div class="panel" id="searchPanel"><input id="query" placeholder="検索する文字列" aria-label="検索する文字列"><input id="replacement" placeholder="置換後の文字列" aria-label="置換後の文字列"><select id="scope" aria-label="検索範囲"><option value="sheet">現在のシート</option><option value="book">ブック全体</option></select><button id="search">検索</button><select id="results" aria-label="検索結果"><option>検索結果</option></select><button id="replace" data-edit>最初の一致を置換</button><button id="replaceAll" data-edit>すべて置換</button><button id="closeSearch" aria-label="検索を閉じる">×</button></div>
 <div class="formula"><input id="address" value="A1" aria-label="セルへ移動"><span class="fx">fx</span><input id="formula" readonly aria-label="数式・セルの内容（表示専用）"></div>
 <div id="status" role="status">XLSXを読み込んでいます…</div>
-<div class="grid" id="grid"><div id="scroll" tabindex="0" role="grid" aria-label="ワークシート"><div id="spacer"></div></div><canvas id="canvas"></canvas><textarea id="editor" aria-label="セルの編集" spellcheck="false"></textarea><div id="busy">読み込み中…</div></div>
+<div class="grid" id="grid"><div id="scroll" tabindex="0" role="grid" aria-label="ワークシート"><div id="spacer"></div></div><canvas id="canvas"></canvas><div id="resizeGuide" style="position:absolute;display:none;background:var(--vscode-focusBorder,#007acc);pointer-events:none;z-index:5"></div><textarea id="editor" aria-label="セルの編集" spellcheck="false"></textarea><div id="busy">読み込み中…</div></div>
 <footer><div id="tabs" role="tablist" aria-label="シート"></div><a href="https://github.com/ibisjp/ibis-office" target="_blank" rel="noopener">Powered by ibisOffice</a><select id="zoom" aria-label="ズーム"><option value=".5">50%</option><option value=".75">75%</option><option selected value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select></footer><div id="menu" role="menu"></div>`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
@@ -40,6 +40,9 @@ type Cell = {
   color: string;
   fill?: string;
   align: string;
+  wrap: boolean;
+  fontSize: number;
+  vertical: string;
   error: boolean;
 };
 let worker: Worker, workerUrl: string;
@@ -208,7 +211,7 @@ function draw() {
         ctx.beginPath();
         ctx.rect(Math.max(d.hw, x) + 2, Math.max(d.hh, y), cw - 4, rh);
         ctx.clip();
-        ctx.font = `${cell.bold ? "bold " : ""}${13 * zoom}px system-ui`;
+        ctx.font = `${cell.bold ? "bold " : ""}${cell.fontSize * zoom}px system-ui`;
         ctx.fillStyle = cell.error
           ? "#f48771"
           : cell.color === "#000000" && !cell.fill
@@ -220,14 +223,31 @@ function draw() {
             : cell.align === "Center"
               ? "center"
               : "left";
-        ctx.fillText(
+        const lineHeight = cell.fontSize * zoom * 1.25;
+        const lines = cellLines(
           cell.text,
-          cell.align === "Right"
-            ? x + cw - 6
-            : cell.align === "Center"
-              ? x + cw / 2
-              : x + 6,
-          y + rh / 2,
+          Math.max(1, cw - 12),
+          (text) => ctx.measureText(text).width,
+          cell.wrap,
+          Math.max(1, Math.ceil(rh / lineHeight)),
+        );
+        ctx.textBaseline = "top";
+        const top =
+          cell.vertical === "Bottom"
+            ? Math.max(y + 4, y + rh - 4 - lines.length * lineHeight)
+            : cell.vertical === "Center"
+              ? Math.max(y + 4, y + (rh - lines.length * lineHeight) / 2)
+              : y + 4;
+        lines.forEach((line, i) =>
+          ctx.fillText(
+            line,
+            cell.align === "Right"
+              ? x + cw - 6
+              : cell.align === "Center"
+                ? x + cw / 2
+                : x + 6,
+            top + i * lineHeight,
+          ),
         );
         ctx.restore();
       }
@@ -263,6 +283,7 @@ function draw() {
   ctx.fillRect(0, 0, d.hw, h);
   ctx.fillStyle = fg;
   ctx.font = `${11 * zoom}px system-ui`;
+  ctx.textBaseline = "middle";
   ctx.textAlign = "center";
   for (let c = v.column; c < Math.min(e.columns, v.column + v.columns); c++) {
     const cw = colsAxis.size(c) * zoom;
@@ -409,6 +430,7 @@ function begin(initial?: string) {
   originalInput = cells.get(key(selected.row, selected.column))?.input ?? "";
   editor.value = initial ?? originalInput;
   editor.style.display = "block";
+  editor.style.fontSize = `${(cells.get(key(selected.row, selected.column))?.fontSize || 13) * zoom}px`;
   editing = true;
   editor.focus();
   if (initial === undefined) editor.select();
@@ -434,6 +456,18 @@ editor.addEventListener("compositionend", () => {
 });
 editor.addEventListener("keydown", (e) => {
   if (composing || e.isComposing || e.keyCode === 229) return;
+  if (e.key === "Enter" && e.altKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    editor.setRangeText(
+      "\n",
+      editor.selectionStart,
+      editor.selectionEnd,
+      "end",
+    );
+    editor.style.height = `${Math.min($("grid").clientHeight - parseFloat(editor.style.top), Math.max(parseFloat(editor.style.height), editor.scrollHeight + 8))}px`;
+    return;
+  }
   if (e.key === "Escape") {
     editing = false;
     editor.style.display = "none";
@@ -461,8 +495,69 @@ scroll.addEventListener("scroll", () => {
   if (editing) void commit().catch(showError);
   schedule();
 });
+type ResizeTarget = { axis: "rows" | "columns"; at: number };
+let resizing:
+  | (ResizeTarget & {
+      start: number;
+      initial: number;
+      pixels: number;
+      sheet: number;
+    })
+  | undefined;
+function resizeHit(e: MouseEvent): ResizeTarget | undefined {
+  if (loading || info?.readonly) return;
+  const rect = scroll.getBoundingClientRect(),
+    d = dims(),
+    o = offset(),
+    x = e.clientX - rect.left,
+    y = e.clientY - rect.top;
+  if (y >= 0 && y < d.hh && x >= d.hw) {
+    const at = resizeBoundary(colsAxis, (x - d.hw + o.x) / zoom, zoom);
+    if (at !== undefined) return { axis: "columns", at };
+  }
+  if (x >= 0 && x < d.hw && y >= d.hh) {
+    const at = resizeBoundary(rowsAxis, (y - d.hh + o.y) / zoom, zoom);
+    if (at !== undefined) return { axis: "rows", at };
+  }
+}
+function previewResize(e: MouseEvent) {
+  if (!resizing) return;
+  const horizontal = resizing.axis === "columns",
+    d = dims(),
+    o = offset(),
+    axis = horizontal ? colsAxis : rowsAxis;
+  resizing.pixels = Math.max(
+    1,
+    Math.min(
+      4096,
+      resizing.initial +
+        ((horizontal ? e.clientX : e.clientY) - resizing.start) / zoom,
+    ),
+  );
+  const guide = $("resizeGuide"),
+    position =
+      (horizontal ? d.hw : d.hh) +
+      (axis.pos(resizing.at) + resizing.pixels) * zoom -
+      (horizontal ? o.x : o.y);
+  guide.style.cssText = `position:absolute;display:block;background:var(--vscode-focusBorder,#007acc);pointer-events:none;z-index:5;${horizontal ? `left:${position}px;top:0;width:2px;height:100%` : `top:${position}px;left:0;height:2px;width:100%`}`;
+}
 scroll.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
+  const hit = resizeHit(e);
+  if (hit) {
+    e.preventDefault();
+    const horizontal = hit.axis === "columns",
+      axis = horizontal ? colsAxis : rowsAxis;
+    resizing = {
+      ...hit,
+      start: horizontal ? e.clientX : e.clientY,
+      initial: axis.size(hit.at),
+      pixels: axis.size(hit.at),
+      sheet,
+    };
+    previewResize(e);
+    return;
+  }
   const p = point(e);
   if (p.row < 0 || p.column < 0) return;
   select(p.row, p.column, e.shiftKey);
@@ -470,13 +565,43 @@ scroll.addEventListener("mousedown", (e) => {
   scroll.focus();
 });
 scroll.addEventListener("mousemove", (e) => {
+  const hit = resizeHit(e);
+  scroll.style.cursor = resizing
+    ? resizing.axis === "columns"
+      ? "col-resize"
+      : "row-resize"
+    : hit
+      ? hit.axis === "columns"
+        ? "col-resize"
+        : "row-resize"
+      : "default";
   if (dragging) {
     const p = point(e);
     select(p.row, p.column, true);
   }
 });
+window.addEventListener("mousemove", (e) => {
+  if (resizing) previewResize(e);
+});
 window.addEventListener("mouseup", () => {
   dragging = false;
+  if (resizing) {
+    const target = resizing;
+    resizing = undefined;
+    $("resizeGuide").style.display = "none";
+    scroll.style.cursor = "default";
+    if (Math.abs(target.pixels - target.initial) >= 0.5)
+      void mutate(
+        "size",
+        {
+          axis: target.axis,
+          at: target.at,
+          pixels: Math.round(target.pixels),
+          sheet: target.sheet,
+        },
+        "サイズ変更",
+      ).catch(showError);
+  }
 });
 scroll.addEventListener("dblclick", () => {
   void begin();
@@ -578,6 +703,19 @@ scroll.addEventListener("paste", (e) => {
   );
   void mutate("set", { cells: list }, "貼り付け").catch(showError);
 });
+for (const [id, axis] of [
+  ["rowHeight", "rows"],
+  ["columnWidth", "columns"],
+] as const)
+  $(id).onclick = () => {
+    const at = axis === "rows" ? selected.row : selected.column;
+    showInput(
+      axis === "rows" ? "行の高さ（px）" : "列の幅（px）",
+      String(Math.round((axis === "rows" ? rowsAxis : colsAxis).size(at))),
+      (value) =>
+        mutate("size", { axis, at, pixels: Number(value) }, "サイズ変更"),
+    );
+  };
 $("bold").onclick = () => {
   void mutate(
     "format",
@@ -695,8 +833,11 @@ scroll.addEventListener("contextmenu", (e) => {
       void mutate("delete", { axis, at }, `${label}の削除`).catch(showError);
     });
     action(`${label}の${axis === "rows" ? "高さ" : "幅"}…`, () => {
-      showInput(`${label}のサイズ（px）`, "25", (value) =>
-        mutate("size", { axis, at, pixels: Number(value) }, "サイズ変更"),
+      showInput(
+        `${label}のサイズ（px）`,
+        String(Math.round((axis === "rows" ? rowsAxis : colsAxis).size(at))),
+        (value) =>
+          mutate("size", { axis, at, pixels: Number(value) }, "サイズ変更"),
       );
     });
   }

@@ -1,2 +1,3 @@
 3b4c73787a3dab3412442891b20a21199aa94e84023fa00c9bf32ea0a13e17c9  canvas-xlsx-editor-0.1.0.vsix
 d8060f71bb9b25666a68fd323d2f7ae41ff8e45257999b32ce88adab75e2220c  canvas-xlsx-editor-0.1.1.vsix
+47bb5688523a6f4ed0dfb0ee0f1fb0c35b319777f7c741e7d185176e0f8d56d9  canvas-xlsx-editor-0.1.2.vsix

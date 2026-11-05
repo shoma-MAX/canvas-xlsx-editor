@@ -2,7 +2,7 @@
   "name": "canvas-xlsx-editor",
   "displayName": "Canvas XLSX Editor",
   "description": "CanvasでXLSXを編集。Powered by ibisOffice.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "shoma-max",
   "license": "AGPL-3.0-only",
   "engines": {

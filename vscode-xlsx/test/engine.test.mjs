@@ -271,25 +271,85 @@ test("declared ZIP expansion is rejected before decompression", () => {
   assert.throws(() => new Engine(bytes), /256MiB/);
 });
 
-for (const name of ["shared-strings.xlsx", "shared-strings-custom.xlsx"]) test(`existing shared strings support Japanese text edits, repeat saves and undo: ${name}`, async () => {
-  const e = new Engine(await readFile(`test/${name}`));
-  assert.equal(get(e).find(c => c.row === 1 && c.column === 0).text, "りんご");
-  req(e, {op:"set", cells:[{row:1,column:0,input:"新しいプロット：主人公の決断"}]});
-  let saved = e.save();
-  let reopened = new Engine(saved);
-  assert.equal(get(reopened).find(c => c.row === 1 && c.column === 0).text, "新しいプロット：主人公の決断");
-  assert.equal(get(reopened).find(c => c.row === 2 && c.column === 0).text, "みかん");
-  reopened.free();
-  req(e, {op:"set", cells:[{row:2,column:0,input:"次の場面"}]});
-  saved = e.save();
-  reopened = new Engine(saved);
-  assert.equal(get(reopened).find(c => c.row === 2 && c.column === 0).text, "次の場面");
-  req(reopened, {op:"set", cells:[{row:0,column:0,input:"再開後の編集"}]});
-  const again = new Engine(reopened.save());
-  assert.equal(get(again).find(c => c.row === 0 && c.column === 0).text, "再開後の編集");
-  again.free(); reopened.free();
-  req(e, {op:"undo"});
-  reopened = new Engine(e.save());
-  assert.equal(get(reopened).find(c => c.row === 2 && c.column === 0).text, "みかん");
-  reopened.free(); e.free();
+for (const name of ["shared-strings.xlsx", "shared-strings-custom.xlsx"])
+  test(`existing shared strings support Japanese text edits, repeat saves and undo: ${name}`, async () => {
+    const e = new Engine(await readFile(`test/${name}`));
+    assert.equal(
+      get(e).find((c) => c.row === 1 && c.column === 0).text,
+      "りんご",
+    );
+    req(e, {
+      op: "set",
+      cells: [{ row: 1, column: 0, input: "新しいプロット：主人公の決断" }],
+    });
+    let saved = e.save();
+    let reopened = new Engine(saved);
+    assert.equal(
+      get(reopened).find((c) => c.row === 1 && c.column === 0).text,
+      "新しいプロット：主人公の決断",
+    );
+    assert.equal(
+      get(reopened).find((c) => c.row === 2 && c.column === 0).text,
+      "みかん",
+    );
+    reopened.free();
+    req(e, { op: "set", cells: [{ row: 2, column: 0, input: "次の場面" }] });
+    saved = e.save();
+    reopened = new Engine(saved);
+    assert.equal(
+      get(reopened).find((c) => c.row === 2 && c.column === 0).text,
+      "次の場面",
+    );
+    req(reopened, {
+      op: "set",
+      cells: [{ row: 0, column: 0, input: "再開後の編集" }],
+    });
+    const again = new Engine(reopened.save());
+    assert.equal(
+      get(again).find((c) => c.row === 0 && c.column === 0).text,
+      "再開後の編集",
+    );
+    again.free();
+    reopened.free();
+    req(e, { op: "undo" });
+    reopened = new Engine(e.save());
+    assert.equal(
+      get(reopened).find((c) => c.row === 2 && c.column === 0).text,
+      "みかん",
+    );
+    reopened.free();
+    e.free();
+  });
+
+test("multiline text, wrapping and row/column sizes survive save and undo", async () => {
+  const e = new Engine(await readFile("test/shared-strings.xlsx"));
+  const before = req(e, { op: "info" }).sheets[0];
+  req(e, {
+    op: "set",
+    cells: [{ row: 1, column: 0, input: "一行目\n二行目\n三行目" }],
+  });
+  let cell = get(e).find((c) => c.row === 1 && c.column === 0);
+  assert.equal(cell.text, "一行目\n二行目\n三行目");
+  assert.equal(cell.wrap, true);
+  assert.ok(
+    req(e, { op: "info" }).sheets[0].rowSizes.find(([r]) => r === 1)[1] > 50,
+  );
+  req(e, { op: "undo" });
+  assert.equal(
+    get(e).find((c) => c.row === 1 && c.column === 0).text,
+    "りんご",
+  );
+  assert.deepEqual(req(e, { op: "info" }).sheets[0].rowSizes, before.rowSizes);
+  req(e, { op: "redo" });
+  req(e, { op: "size", axis: "rows", at: 1, pixels: 90 });
+  req(e, { op: "size", axis: "columns", at: 0, pixels: 240 });
+  const r = new Engine(e.save());
+  cell = get(r).find((c) => c.row === 1 && c.column === 0);
+  assert.equal(cell.input, "一行目\n二行目\n三行目");
+  assert.equal(cell.wrap, true);
+  const info = req(r, { op: "info" }).sheets[0];
+  assert.equal(info.rowSizes.find(([r]) => r === 1)[1], 90);
+  assert.equal(info.columnSizes.find(([c]) => c === 0)[1], 240);
+  r.free();
+  e.free();
 });

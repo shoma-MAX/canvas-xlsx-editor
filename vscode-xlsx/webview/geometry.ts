@@ -69,3 +69,45 @@ export function parseTsv(s: string) {
     rows.pop();
   return rows;
 }
+
+/** Lay out explicit newlines and optional wrapping, bounding work to visible lines. */
+export function cellLines(
+  text: string,
+  width: number,
+  measure: (text: string) => number,
+  wrap: boolean,
+  maxLines = 1000,
+): string[] {
+  const out: string[] = [];
+  for (const paragraph of text.split(/\r\n|\r|\n/)) {
+    if (out.length >= maxLines) break;
+    if (!wrap) {
+      out.push(paragraph);
+      continue;
+    }
+    let line = "";
+    for (const char of paragraph) {
+      if (line && measure(line + char) > width) {
+        out.push(line);
+        line = "";
+        if (out.length >= maxLines) return out;
+      }
+      line += char;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+/** Find the row/column ending within a screen-pixel tolerance of a header edge. */
+export function resizeBoundary(
+  axis: Axis,
+  pixel: number,
+  zoom: number,
+  tolerance = 5,
+): number | undefined {
+  const i = axis.at(pixel);
+  if (i > 0 && Math.abs(axis.pos(i) - pixel) * zoom <= tolerance) return i - 1;
+  if (Math.abs(axis.pos(i + 1) - pixel) * zoom <= tolerance) return i;
+  return undefined;
+}
